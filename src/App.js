@@ -3,9 +3,17 @@ import logo from './logo.svg'
 import {InputGroup, Button, FormControl, Form, Dropdown, DropdownButton} from 'react-bootstrap'
 import { states, countries } from './states'
 import { ContractABI } from "./ABI"
+import { apiKey, nftRaffleWallet } from './config'
+import circle from './service/circle'
+
 import Web3 from 'web3'
 import './App.css'
 import 'bootstrap/dist/css/bootstrap.min.css'
+
+const priceTable = {
+  eth: '0.00001',
+  usdc: '1'
+}
 
 const web3 = new Web3(new Web3.providers.HttpProvider('http://127.0.0.1:7545'))
 web3.eth.defaultAccount = web3.eth.accounts[0]
@@ -14,7 +22,7 @@ const RemixContract = new web3.eth.Contract(
   ContractABI,
   "0xb369f11d3CfD87aEf769e3cFdEB21d68e43152EB"
   //"0x677BB4A98566ab3e12E7178A0C06Ae3A3988A2A7"
-);
+)
 
 
 const getCountryName = ({code}) => {
@@ -31,8 +39,11 @@ const getStateName = ({code}) => {
 
 const ticketPrice = '0.001'
 
-const getPrice = (amount, price) => {
-  return amount*price
+const getPrice = (price, amount, currency) => {
+  const ticketPrice = priceTable[currency.toLowerCase()]
+  const result = amount*ticketPrice || amount*price
+  console.log(amount, price, currency, ticketPrice, result)
+  return result
 }
 
 function App() {
@@ -42,6 +53,8 @@ function App() {
   const [notes, setNotes] = useState('')
   const [user, setUser] = useState('')
   const [tickets, setTickets] = useState('')
+  const [currentCurrency, setCurrentCurrency] = useState('ETH')
+  const [circleAccountParams,setCircleAccountParams] = useState({})
   
   const handleFormSubmit = () => {
     return {
@@ -74,9 +87,30 @@ function App() {
     console.log(result)
   }
 
-  useEffect(()=>{
+  useEffect(async ()=>{
     getDefaultData()
+    const config = await circle.getParams({apiKey})
+    console.log(config)
+    const ballance = await circle.getBallance({apiKey}) || {}
+    if (ballance.data) {
+      if (Array.isArray(ballance.data)) {
+        setCircleAccountParams(ballance.data[0])
+      }
+    }
+    console.log(ballance)
   },[])
+
+  const handleBidNFT = () => {
+    const params = handleFormSubmit()
+    if (currentCurrency.toLowerCase() === 'usdt') {
+      if (params) {
+        const result = circle.sendPayment({apiKey, to: nftRaffleWallet, amount: params.ethamount})
+      }
+    }
+    if (currentCurrency.toLowerCase() === 'eth') {
+      setData(params)
+    }
+  }
 
   return (
     <div className="App">
@@ -164,13 +198,47 @@ function App() {
           {/* <InputGroup.Text>.00</InputGroup.Text> */}
         </InputGroup>
 
+        <InputGroup 
+          className="mb-3"
+          //as="textarea"
+          disabled={true}
+          onChange={(e)=>console.log(e.target.value)}
+        >
+          <DropdownButton
+            variant="outline-secondary"
+            title="Currency"
+            id="input-group-state"
+            onSelect={(val)=>setCurrentCurrency(val)}
+          >
+            
+                <Dropdown.Item 
+                  eventKey={"ETH"}
+                  key={"ETH"}
+                >{"ETH"}</Dropdown.Item>
+
+                <Dropdown.Item  
+                  eventKey={"USDC"}
+                  key={"USDC"}
+                >{"USDC"}</Dropdown.Item>
+          </DropdownButton>
+
+          <FormControl 
+              aria-label="Text input with dropdown button"
+              value={currentCurrency}
+              readOnly={true}
+          />
+            {currentCurrency.toLocaleLowerCase() === 'usdc' && <div style={{display: 'flex', alignItems: 'center', paddingLeft: 5, paddingRight: 5, border: '1px solid rgb(195,202,209)	'}}>
+            Your Circle Wallet:
+            Currency - <b>{circleAccountParams.name}</b>(<b>{circleAccountParams.symbol}</b>), Balance - <b>{circleAccountParams.totalAmount} {circleAccountParams.symbol}</b>
+            </div>}
+        </InputGroup>
 
         <InputGroup className="mb-3">
-          <InputGroup.Text>ETH</InputGroup.Text>
+          <InputGroup.Text>{currentCurrency}</InputGroup.Text>
           <FormControl 
             aria-label="Amount in ETH"
             //value={ethA}
-            value={getPrice(ticketPrice,tickets).toFixed(3)}
+            value={getPrice(ticketPrice,tickets,currentCurrency).toFixed(5)}
             //onChange={(e)=>setEthA(e.target.value)}
             disabled={true}
           />
@@ -192,9 +260,6 @@ function App() {
           >Bid NFT</Button>
         </InputGroup>
       </div>
-              <Button
-                onClick={()=>setData(handleFormSubmit())}
-              >Test Send to blockchain</Button>
     </div>
   )
 }
